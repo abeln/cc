@@ -1,14 +1,21 @@
 open Core.Std
 
-let c v =
+let id v =
     Cps.App (Cps.Var "id", [v])
 
-let l = Lam.Record [Lam.Int 4; Lam.Select(0, Lam.Var "m")]
+let l = Lam.Record [
+    Lam.App (
+        (Lam.Prim Lam.Neg),
+        Lam.App (
+            (Lam.Prim Lam.Plus),
+            Lam.Record [Lam.Int 4; Lam.Int 5])
+    );
+    Lam.Select(0, Lam.Var "m")]
 
-let cps_l = Conv.conv l c
+let cps_l = Conv.to_cps l id
 
 let () = (
-    printf "%s\n" (Lam.lexp_to_string l);
+    printf !"%{sexp:Lam.lexp}\n" l;
     printf "\n";
-    printf "%s\n" (Cps.cexp_to_string cps_l)
+    printf !"%{sexp:Cps.cexp}\n" cps_l
 )

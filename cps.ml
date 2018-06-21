@@ -15,6 +15,13 @@ type primop =
     | Minus
     | Times
     | Div
+    | Neg
+    | Gt
+    | Ge
+    | Lt
+    | Le
+    | Ieq
+    | Ineq
     [@@deriving sexp_of]
     (* TODO: add rest *)
 
@@ -33,5 +40,3 @@ type cexp =
     | Switch of value * cexp list
     | Primop of primop * value list * var list * cexp list
     [@@deriving sexp_of]
-
-let cexp_to_string e = sexp_of_cexp e |> Sexplib.Sexp.to_string_hum

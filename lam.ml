@@ -12,6 +12,11 @@ type primop =
     | Minus
     | Times
     | Div
+    | Neg
+    | Gt
+    | Ge
+    | Lt
+    | Le
     [@@deriving sexp_of]
     (* TODO: add rest *)
 
@@ -27,5 +32,3 @@ type lexp =
     | Select of int * lexp
     | Prim of primop
     [@@deriving sexp_of]
-
-let lexp_to_string e = sexp_of_lexp e |> Sexplib.Sexp.to_string_hum
