@@ -36,7 +36,14 @@ let rec to_cps lexp cont =
         let b = Gensym.new_var () in
         Cps.Select (i, v, b, cont (Cps.Var b))
     )
+    | Lam.Fn (v, e) ->
+        let (f, k) = (Gensym.new_var (), Gensym.new_var ()) in
+        Cps.Fix ([(f, [v; k], to_cps e (fun z -> Cps.App (Var k, [z])))], cont (Cps.Var f))
     | Lam.App (Lam.Prim op, e) -> to_cps_prim op e cont
+    | Lam.App (f, e) ->
+        let (k, a) = (Gensym.new_var (), Gensym.new_var ()) in
+        Cps.Fix ([(k, [a], cont (Cps.Var a))],
+            to_cps f (fun fv -> to_cps e (fun ev -> Cps.App (fv, [ev; Cps.Var k]))))
     | _ -> raise (Invalid_argument (Printf.sprintf !"can't handle given lambda expression: %{sexp:Lam.lexp}" lexp))
 
 and to_cps_lst lexps cont =

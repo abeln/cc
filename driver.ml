@@ -14,8 +14,12 @@ let l = Lam.Record [
 
 let cps_l = Conv.to_cps l id
 
+let l2 = Lam.App (Lam.Fn ("x", Lam.App (Lam.Prim Lam.Times, Lam.Record [Lam.Var "x"; Lam.Int 10])), Lam.Int 4)
+
+let cps_l2 = Conv.to_cps l2 id
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" l;
+    printf !"%{sexp:Lam.lexp}\n" l2;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" cps_l
+    printf !"%{sexp:Cps.cexp}\n" cps_l2
 )
