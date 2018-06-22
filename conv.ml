@@ -39,6 +39,17 @@ let rec to_cps lexp cont =
     | Lam.Fn (v, e) ->
         let (f, k) = (Gensym.new_var (), Gensym.new_var ()) in
         Cps.Fix ([(f, [v; k], to_cps e (fun z -> Cps.App (Var k, [z])))], cont (Cps.Var f))
+    | Lam.Fix (fs, bs, e) ->
+        let rec to_cps_fns fs bs =
+            match (fs, bs) with
+            | (f :: fr, Lam.Fn (a, b) :: br) -> (
+                let k = Gensym.new_var () in
+                (f, [a; k], to_cps b (fun bv -> Cps.App (Cps.Var k, [bv]))) :: to_cps_fns fr br
+                )
+            | ([], []) -> []
+            | _ -> raise (Invalid_argument (Printf.sprintf !"can't convert mutually recursive functions: %{sexp:Lam.lexp}" lexp))
+        in
+        Cps.Fix (to_cps_fns fs bs, to_cps e (fun ev -> cont ev))
     | Lam.App (Lam.Prim op, e) -> to_cps_prim op e cont
     | Lam.App (f, e) ->
         let (k, a) = (Gensym.new_var (), Gensym.new_var ()) in

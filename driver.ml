@@ -18,8 +18,17 @@ let l2 = Lam.App (Lam.Fn ("x", Lam.App (Lam.Prim Lam.Times, Lam.Record [Lam.Var 
 
 let cps_l2 = Conv.to_cps l2 id
 
+let fact = Lam.Fix (["fact"],
+    [Lam.Fn ("n", Lam.App (Lam.Prim Lam.Times,
+                           Lam.Record [Lam.Var "n"; Lam.App (Lam.Var "fact",
+                                                             Lam.App (Lam.Prim Lam.Minus,
+                                                                      Lam.Record [Lam.Var "n"; Lam.Int 1]))]))],
+        Lam.App (Lam.Var "fact", Lam.Int 10))
+
+let cps_fact = Conv.to_cps fact id
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" l2;
+    printf !"%{sexp:Lam.lexp}\n" fact;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" cps_l2
+    printf !"%{sexp:Cps.cexp}\n" cps_fact
 )
