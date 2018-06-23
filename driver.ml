@@ -27,8 +27,15 @@ let fact = Lam.Fix (["fact"],
 
 let cps_fact = Conv.to_cps fact id
 
+let if_exp = Lam.If (
+    Lam.App (Lam.Prim Lam.Gt, Lam.Record [Lam.Int 2; Lam.Int 1]),
+    (Lam.App (Lam.Prim Lam.Plus, Lam.Record [Lam.Int 40; Lam.Int 2])),
+    (Lam.Int 50))
+
+let if_exp_cexp = Conv.to_cps if_exp id
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" fact;
+    printf !"%{sexp:Lam.lexp}\n" if_exp;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" cps_fact
+    printf !"%{sexp:Cps.cexp}\n" if_exp_cexp
 )

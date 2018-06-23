@@ -20,6 +20,17 @@ type primop =
     [@@deriving sexp_of]
     (* TODO: add rest *)
 
+type conrep =
+    | Tagged of int
+    | Constant of int
+    [@@deriving sexp_of]
+
+type con =
+    | Datacon of conrep
+    | Intcon of int
+    | Stringcon of string 
+    [@@deriving sexp_of]
+
 type lexp =
     | Var of var
     | Fn of var * lexp
@@ -31,4 +42,8 @@ type lexp =
     | Record of lexp list
     | Select of int * lexp
     | Prim of primop
+    | Switch of lexp * conrep list * (con * lexp) list * lexp option
+    | Decon of conrep * lexp
+    | Con of conrep * lexp
+    | If of lexp * lexp * lexp
     [@@deriving sexp_of]

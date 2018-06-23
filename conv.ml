@@ -58,6 +58,29 @@ let rec to_cps lexp cont =
     | Lam.Prim op ->
         let x = Gensym.new_var () in
         to_cps (Lam.Fn (x, Lam.App (Lam.Prim op, Lam.Var x))) cont
+    | Lam.Con (rep, e) -> (
+        match rep with 
+        | Lam.Constant i -> to_cps (Lam.Int i) cont
+        | Lam.Tagged i -> to_cps (Lam.Record [e; Lam.Int i]) cont
+    )
+    | Lam.Decon (rep, e) -> (
+        match rep with
+        | Lam.Tagged _ -> to_cps (Lam.Select (0, e)) cont
+        | Lam.Constant _ -> raise (Invalid_argument (Printf.sprintf !"can't apply decon to constant constructor: %{sexp:Lam.conrep}" rep))
+    )
+    | Lam.If (c, t, f) ->
+        (to_cps (Lam.Switch (c, [],
+            [(Lam.Datacon (Lam.Constant 1), t);
+             (Lam.Datacon (Lam.Constant 0), f)], None)) cont)
+    | Lam.Switch (e, _, cs, def) -> (
+        let (b, ev2) = (Gensym.new_var (), Gensym.new_var ()) in
+        to_cps e (fun ev ->
+            let (k, a) = (Gensym.new_var (), Gensym.new_var ()) in 
+            Cps.Fix ([(k, [a], to_cps_switch (Cps.Var a) cs def cont)],
+                Cps.Primop (Cps.Boxed, [ev], [],
+                    [Cps.Select (0, ev, ev2, Cps.App (Cps.Var k, [Cps.Var ev2]));
+                     Cps.App (Cps.Var k, [ev])])))
+    )
     | _ -> raise (Invalid_argument (Printf.sprintf !"can't handle given lambda expression: %{sexp:Lam.lexp}" lexp))
 
 and to_cps_lst lexps cont =
@@ -90,3 +113,26 @@ and to_cps_prim op e cont =
             | _ -> raise (Invalid_argument (Printf.sprintf !"expected argument to multi-arg primop to be a record, but got: %{sexp:Lam.lexp}" e))
         )
         | _ -> raise (Invalid_argument (Printf.sprintf !"cannot cps-convert operator: %{sexp:Lam.primop}" op))
+
+and to_cps_switch v cs def cont =
+    let (cont', a) = (Gensym.new_var (), Gensym.new_var ()) in
+    let ifeq v1 v2 c1 c2 = 
+        Cps.Primop (Cps.Ieq, [v1; v2], [], [c1; c2])
+    in
+    let rec switch_one = function
+    | (cr, e) :: cs' ->
+        let rem_cexp = switch_one cs' in
+        to_cps e (fun ev ->
+            match cr with
+            | Lam.Intcon i | Lam.Datacon (Lam.Constant i)| Lam.Datacon (Lam.Tagged i)  ->
+                ifeq (Cps.Int i) v (Cps.App (Var cont', [ev])) rem_cexp
+            | _ -> raise (Invalid_argument (Printf.sprintf !"can't handle constructor: %{sexp:Lam.con}" cr))
+            )
+    | [] -> (
+        match def with
+        | Some def_exp -> to_cps def_exp (fun def_v -> Cps.App (Cps.Var cont', [def_v]))
+        | None -> (Cps.App (Cps.Var cont', [Cps.Int 0])) (* should throw here instead *)
+    )
+    in
+    Cps.Fix ([(cont', [a], cont (Cps.Var a))],
+        switch_one cs)

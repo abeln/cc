@@ -22,6 +22,7 @@ type primop =
     | Le
     | Ieq
     | Ineq
+    | Boxed
     [@@deriving sexp_of]
     (* TODO: add rest *)
 
