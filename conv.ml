@@ -128,14 +128,13 @@ and to_cps_switch v cs def cont =
         Cps.Primop (Cps.Ieq, [v1; v2], [], [c1; c2])
     in
     let rec switch_one = function
-    | (cr, e) :: cs' ->
+    | (cr, e) :: cs' -> (
         let rem_cexp = switch_one cs' in
-        to_cps e (fun ev ->
-            match cr with
-            | Lam.Intcon i | Lam.Datacon (Lam.Constant i)| Lam.Datacon (Lam.Tagged i)  ->
-                ifeq (Cps.Int i) v (Cps.App (Var cont', [ev])) rem_cexp
-            | _ -> raise (Invalid_argument (Printf.sprintf !"can't handle constructor: %{sexp:Lam.con}" cr))
-            )
+        match cr with
+        | Lam.Intcon i | Lam.Datacon (Lam.Constant i)| Lam.Datacon (Lam.Tagged i)  ->
+                ifeq (Cps.Int i) v (to_cps e (fun ev -> Cps.App (Var cont', [ev]))) rem_cexp
+        | _ -> raise (Invalid_argument (Printf.sprintf !"can't handle constructor: %{sexp:Lam.con}" cr))
+    )
     | [] -> (
         match def with
         | Some def_exp -> to_cps def_exp (fun def_v -> Cps.App (Cps.Var cont', [def_v]))
