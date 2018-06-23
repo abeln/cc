@@ -1,14 +1,22 @@
 (* CPS conversion *)
 
 module Gensym = struct
-    let c = ref 0
+    let res_c = ref 0
+    let fun_c = ref 0
+    let arg_c = ref 0
 
-    let prefix = "tv"
+    let res_pre = "res"
+    let fun_pre = "fun"
+    let arg_pre = "arg"
 
-    let new_var () = 
-        let c' = !c in
-        c := !c + 1;
-        Printf.sprintf "%s%d" prefix c'
+    let inc cnt pre = fun () ->
+        let cnt' = !cnt in
+        cnt := !cnt + 1;
+        Printf.sprintf "%s%d" pre cnt'
+
+    let new_res = inc res_c res_pre
+    let new_fun = inc fun_c fun_pre
+    let new_arg = inc arg_c arg_pre
 end
 
 let primop_to_cps = function
@@ -29,21 +37,21 @@ let rec to_cps lexp cont =
     | Lam.Int i -> cont (Cps.Int i)
     | Lam.String s -> cont (Cps.String s) (* didn't do the single-char optimization *)
     | Lam.Record fs -> to_cps_lst fs (fun vs -> 
-        let b = Gensym.new_var () in
+        let b = Gensym.new_res () in
         Cps.Record (List.map (fun v -> (v, Cps.Offp 0)) vs, b, cont (Cps.Var b))
     )
     | Lam.Select (i, e) -> to_cps e (fun v -> 
-        let b = Gensym.new_var () in
+        let b = Gensym.new_res () in
         Cps.Select (i, v, b, cont (Cps.Var b))
     )
     | Lam.Fn (v, e) ->
-        let (f, k) = (Gensym.new_var (), Gensym.new_var ()) in
+        let (f, k) = (Gensym.new_fun (), Gensym.new_arg ()) in
         Cps.Fix ([(f, [v; k], to_cps e (fun z -> Cps.App (Var k, [z])))], cont (Cps.Var f))
     | Lam.Fix (fs, bs, e) ->
         let rec to_cps_fns fs bs =
             match (fs, bs) with
             | (f :: fr, Lam.Fn (a, b) :: br) -> (
-                let k = Gensym.new_var () in
+                let k = Gensym.new_arg () in
                 (f, [a; k], to_cps b (fun bv -> Cps.App (Cps.Var k, [bv]))) :: to_cps_fns fr br
                 )
             | ([], []) -> []
@@ -52,11 +60,11 @@ let rec to_cps lexp cont =
         Cps.Fix (to_cps_fns fs bs, to_cps e (fun ev -> cont ev))
     | Lam.App (Lam.Prim op, e) -> to_cps_prim op e cont
     | Lam.App (f, e) ->
-        let (k, a) = (Gensym.new_var (), Gensym.new_var ()) in
+        let (k, a) = (Gensym.new_fun (), Gensym.new_arg ()) in
         Cps.Fix ([(k, [a], cont (Cps.Var a))],
             to_cps f (fun fv -> to_cps e (fun ev -> Cps.App (fv, [ev; Cps.Var k]))))
     | Lam.Prim op ->
-        let x = Gensym.new_var () in
+        let x = Gensym.new_arg () in
         to_cps (Lam.Fn (x, Lam.App (Lam.Prim op, Lam.Var x))) cont
     | Lam.Con (rep, e) -> (
         match rep with 
@@ -73,9 +81,9 @@ let rec to_cps lexp cont =
             [(Lam.Datacon (Lam.Constant 1), t);
              (Lam.Datacon (Lam.Constant 0), f)], None)) cont)
     | Lam.Switch (e, _, cs, def) -> (
-        let (b, ev2) = (Gensym.new_var (), Gensym.new_var ()) in
+        let ev2 = Gensym.new_res () in
         to_cps e (fun ev ->
-            let (k, a) = (Gensym.new_var (), Gensym.new_var ()) in 
+            let (k, a) = (Gensym.new_fun (), Gensym.new_arg ()) in 
             Cps.Fix ([(k, [a], to_cps_switch (Cps.Var a) cs def cont)],
                 Cps.Primop (Cps.Boxed, [ev], [],
                     [Cps.Select (0, ev, ev2, Cps.App (Cps.Var k, [Cps.Var ev2]));
@@ -94,19 +102,19 @@ and to_cps_lst lexps cont =
 and to_cps_prim op e cont =
         match op with
         | Lam.Neg ->
-            let b = Gensym.new_var () in
+            let b = Gensym.new_res () in
             to_cps e (fun v -> Cps.Primop (primop_to_cps op, [v], [b], [cont (Var b)]))
         | Lam.Plus | Lam.Minus | Lam.Times | Lam.Div -> (
             match e with
             | Lam.Record fs ->
-                let b = Gensym.new_var () in
+                let b = Gensym.new_res () in
                 to_cps_lst fs (fun vs -> Cps.Primop (primop_to_cps op, vs, [b], [cont (Var b)]))
             | _ -> raise (Invalid_argument (Printf.sprintf !"expected argument to multi-arg primop to be a record, but got: %{sexp:Lam.lexp}" e))
         )
         | Lam.Gt | Lam.Ge | Lam.Lt | Lam.Le -> (
             match e with
             | Lam.Record fs ->
-                let (fn, fa) = (Gensym.new_var (), Gensym.new_var ()) in
+                let (fn, fa) = (Gensym.new_fun (), Gensym.new_arg ()) in
                 to_cps_lst fs (fun vs ->
                     Cps.Fix ([(fn, [fa], cont (Cps.Var fa))],
                         Cps.Primop (primop_to_cps op, vs, [], [Cps.App ((Cps.Var fn), [Cps.Int 1]); Cps.App (Cps.Var fn, [Cps.Int 0])])))
@@ -115,7 +123,7 @@ and to_cps_prim op e cont =
         | _ -> raise (Invalid_argument (Printf.sprintf !"cannot cps-convert operator: %{sexp:Lam.primop}" op))
 
 and to_cps_switch v cs def cont =
-    let (cont', a) = (Gensym.new_var (), Gensym.new_var ()) in
+    let (cont', a) = (Gensym.new_fun (), Gensym.new_arg ()) in
     let ifeq v1 v2 c1 c2 = 
         Cps.Primop (Cps.Ieq, [v1; v2], [], [c1; c2])
     in
