@@ -37,23 +37,36 @@ let preproc exp =
     )
     in
     proc Info.empty exp
-    
+
+module Map = String.Map
+
 let contract exp =
     let nclicks = ref 0 in
     let click () = nclicks := !nclicks + 1 in
     let pre = preproc exp in
+    let rename_map = ref Map.empty in
+    let new_name var new_val = (rename_map := Map.add !rename_map ~key:var ~data:new_val) in
+    let rename vl = match vl with
+    | Cps.Var var -> (match Map.find !rename_map var with
+                        | Some new_val -> new_val
+                        | None -> Cps.Var var)
+    | _ -> vl
+    in
+    let rename_multi l = List.map l ~f:rename in
     let rec go = function
-    | Cps.Record (fields, v, cont) -> if (Info.used pre v) then Cps.Record (fields, v, go cont) else go cont
-    | Cps.Select (off, vl, var, cont) -> if Info.used pre var then Cps.Select (off, vl, var, go cont) else go cont
-    | Cps.Offset (off, vl, var, cont) -> Cps.Offset (off, vl, var, go cont)
-    | Cps.App _ as fun_app -> fun_app
+    | Cps.Record (fields, v, cont) -> if (Info.used pre v) then Cps.Record (List.map fields ~f:(fun (vl, path) -> (rename vl, path)), v, go cont) else go cont
+    | Cps.Select (off, vl, var, cont) -> if Info.used pre var then Cps.Select (off, rename vl, var, go cont) else go cont
+    | Cps.Offset (off, vl, var, cont) -> Cps.Offset (off, rename vl, var, go cont)
+    | Cps.App (fn, args) -> Cps.App (rename fn, rename_multi args)
     | Cps.Fix (fundefs, cont) -> (
         let rdefs = List.fold fundefs ~init:[] ~f:(fun acc (name, args, body) ->
             if Info.used pre name then (name, args, go body) :: acc else acc)
         in
         if List.is_empty rdefs then go cont else Cps.Fix (List.rev rdefs, go cont)
     )
-    | Cps.Primop (op, args, res, conts) -> Cps.Primop (op, args, res, List.map conts ~f:go)
-    | Cps.Switch (vl, alts) -> Cps.Switch (vl, List.map alts ~f:go)
+    | Cps.Primop (Cps.Plus, [Cps.Int n; Cps.Int 0], [res], [cont]) -> (new_name res (Cps.Int n); go cont)
+    | Cps.Primop (Cps.Plus, [Cps.Int 0; Cps.Int n], [res], [cont]) -> (new_name res (Cps.Int n); go cont)
+    | Cps.Primop (op, args, res, conts) -> Cps.Primop (op, rename_multi args, res, List.map conts ~f:go)
+    | Cps.Switch (vl, alts) -> Cps.Switch (rename vl, List.map alts ~f:go)
     in
     go exp

@@ -29,7 +29,7 @@ let cps_fact = Conv.to_cps fact id
 
 let if_exp = Lam.If (
     Lam.App (Lam.Prim Lam.Gt, Lam.Record [Lam.Int 2; Lam.Int 1]),
-    (Lam.App (Lam.Prim Lam.Plus, Lam.Record [Lam.Int 40; Lam.Int 2])),
+    (Lam.App (Lam.Prim Lam.Plus, Lam.Record [Lam.Int 40; Lam.Int 0])),
     (Lam.Int 50))
 
 let if_exp_cexp = Conv.to_cps if_exp id
@@ -39,7 +39,7 @@ let unused = Cps.Record ([(Cps.Int 1, Cps.Offp 0); (Cps.Int 2, Cps.Offp 0)], "re
 let unused_contract = Contract.contract unused
 
 let () = (
-    printf !"%{sexp:Cps.cexp}\n" unused;
+    printf !"%{sexp:Lam.lexp}\n" if_exp;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" unused_contract
+    printf !"%{sexp:Cps.cexp}\n" if_exp_cexp
 )
