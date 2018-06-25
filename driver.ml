@@ -34,8 +34,12 @@ let if_exp = Lam.If (
 
 let if_exp_cexp = Conv.to_cps if_exp id
 
+let unused = Cps.Record ([(Cps.Int 1, Cps.Offp 0); (Cps.Int 2, Cps.Offp 0)], "res", id (Cps.Var "foo"))
+
+let unused_contract = Contract.contract unused
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" if_exp;
+    printf !"%{sexp:Cps.cexp}\n" unused;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" if_exp_cexp
+    printf !"%{sexp:Cps.cexp}\n" unused_contract
 )
