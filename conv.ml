@@ -51,7 +51,7 @@ let rec to_cps lexp cont =
         let rec to_cps_fns fs bs =
             match (fs, bs) with
             | (f :: fr, Lam.Fn (a, b) :: br) -> (
-                let k = Gensym.new_arg () in
+                let k = Gensym.new_fun () in
                 (f, [a; k], to_cps b (fun bv -> Cps.App (Cps.Var k, [bv]))) :: to_cps_fns fr br
                 )
             | ([], []) -> []

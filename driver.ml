@@ -3,6 +3,8 @@ open Core.Std
 let id v =
     Cps.App (Cps.Var "id", [v])
 
+let compile e = Conv.to_cps e id |> Contract.contract
+
 let l = Lam.Record [
     Lam.App (
         (Lam.Prim Lam.Neg),
@@ -38,8 +40,16 @@ let unused = Cps.Record ([(Cps.Int 1, Cps.Offp 0); (Cps.Int 2, Cps.Offp 0)], "re
 
 let unused_contract = Contract.contract unused
 
+let flatten = Lam.Fix (["first"], [Lam.Fn ("rec", Lam.Select (1, Lam.Var "rec"))], Lam.App (Lam.Var "first", Lam.Record [Lam.Int 1; Lam.Int 2]))
+
+let flatten_not_opt = Conv.to_cps flatten id
+
+let flatten_cps = compile flatten
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" if_exp;
+    printf !"%{sexp:Lam.lexp}\n" flatten;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" if_exp_cexp
+    printf !"%{sexp:Cps.cexp}\n" flatten_not_opt;
+    printf "\n";
+    printf !"%{sexp:Cps.cexp}\n" flatten_cps
 )
