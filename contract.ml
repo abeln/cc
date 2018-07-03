@@ -31,7 +31,7 @@ module Info = struct
 
     let used info var = Set.mem info.used var
 
-    let flat_args {used; escape; def} fn arg = match Map.find def fn with
+    let flat_args {def; _} fn arg = match Map.find def fn with
     | Some (FlatFun arg_descs) -> (
         let rec find = function
         | [] -> None
@@ -50,17 +50,17 @@ module Info = struct
     | _ -> AriNotSet :: init_arity (n - 1)
 
     (* If the variable points to an argument that's only used in the body of a select, update the accessed offset. *)
-    let bump_if_arg ({used; escape; def} as info) var offset = match Map.find def var with
+    let bump_if_arg ({def; _} as info) var offset = match Map.find def var with
     | Some (ArgNotSet fname) -> add_def info var (ArgOnlySelect (fname, offset))
     | Some (ArgOnlySelect (fname, offset2)) -> add_def info var (ArgOnlySelect (fname, max offset offset2))
     | _ -> info
 
     (* If the variable points to an argument that's only used in the body of a select, mark it as not doing so anymore. *)
-    let unmark_if_arg ({used; escape; def} as info) var = match Map.find def var with
+    let unmark_if_arg ({def; _} as info) var = match Map.find def var with
     | Some (ArgOnlySelect _) | Some (ArgNotSet _) -> add_def info var ArgOther
     | _ -> info
 
-    let record_args_arity ({used; escape; def} as info) fname args = match Map.find def fname with
+    let record_args_arity ({def; _} as info) fname args = match Map.find def fname with
     | Some (Fun (vars, arity)) -> (
         if List.length args <> List.length arity then raise (Invalid_argument (Printf.sprintf "expected %d arguments, but got %d in function %s" (List.length arity) (List.length args) fname))
         else (
@@ -72,7 +72,7 @@ module Info = struct
                     | (AriNotSet, Some (Record n)) -> AriAlwaysRecord n
                     | (AriNotSet, _) -> AriUnknown
                     | (AriAlwaysRecord n, Some (Record m)) -> if n = m then AriAlwaysRecord n else AriUnknown
-                    | (AriAlwaysRecord n, _) -> AriUnknown
+                    | (AriAlwaysRecord _, _) -> AriUnknown
                     | (AriUnknown, _) -> AriUnknown
                 )
                 | _ -> AriUnknown
@@ -174,70 +174,84 @@ let unwrap_vars_exn vars = List.map vars ~f:(fun v -> match v with
 let contract exp =
     let nclicks = ref 0 in
     let click () = nclicks := !nclicks + 1 in
-    let info: Info.t = preproc exp in
-    let rename_map = ref Map.empty in
-    let new_name var new_val = (rename_map := Map.add !rename_map ~key:var ~data:new_val) in
-    let rename vl = match vl with
-    | Cps.Var var -> (match Map.find !rename_map var with
-                        | Some new_val -> new_val
-                        | None -> Cps.Var var)
-    | _ -> vl
-    in
-    let rename_multi l = List.map l ~f:rename in
-    let rec go = function
-    | Cps.Record (fields, v, cont) ->
-        if (Info.used info v) then Cps.Record (List.map fields ~f:(fun (vl, path) -> (rename vl, path)), v, go cont)
-        else go cont
-    | Cps.Offset (off, vl, var, cont) -> Cps.Offset (off, rename vl, var, go cont)
-    | Cps.App (fn, args) -> (
-        match fn with
-        | Cps.Var fun_name -> (match Map.find info.Info.def fun_name with
-            | Some (Info.FlatFun flat_args) ->
-                let flat_args_and_actual = List.zip_exn flat_args args in
-                let new_args = List.map flat_args_and_actual ~f:(fun ((_, is_flat, arg_list), arg) ->
-                    if is_flat then (true, arg, Gensym.gen_val_res (List.length arg_list))
-                    else (false, arg, [arg])) in
-                let new_args_raw = List.map new_args ~f:(fun (_, _, args) -> args) |> List.concat in
-                let base = Cps.App (rename fn, rename_multi new_args_raw) in
-                List.fold new_args ~init:base ~f:(fun acc (is_flat, arg_name, args) ->
-                    if is_flat then gen_select arg_name (unwrap_vars_exn args) acc
-                    else acc
-                )
+
+    let rec go_repeat exp =
+        let info: Info.t = preproc exp in
+        
+        let rename_map = ref Map.empty in
+        let new_name var new_val = (rename_map := Map.add !rename_map ~key:var ~data:new_val) in
+        let rename vl = match vl with
+        | Cps.Var var -> (match Map.find !rename_map var with
+                            | Some new_val -> new_val
+                            | None -> Cps.Var var)
+        | _ -> vl
+        in
+        let rename_multi l = List.map l ~f:rename in
+
+        let rec go = function
+        | Cps.Record (fields, v, cont) ->
+            if (Info.used info v) then Cps.Record (List.map fields ~f:(fun (vl, path) -> (rename vl, path)), v, go cont)
+            else (click (); go cont)
+        | Cps.Offset (off, vl, var, cont) -> Cps.Offset (off, rename vl, var, go cont)
+        | Cps.App (fn, args) -> (
+            match fn with
+            | Cps.Var fun_name -> (match Map.find info.Info.def fun_name with
+                | Some (Info.FlatFun flat_args) ->
+                    let flat_args_and_actual = List.zip_exn flat_args args in
+                    let new_args = List.map flat_args_and_actual ~f:(fun ((_, is_flat, arg_list), arg) ->
+                        if is_flat then (true, arg, Gensym.gen_val_res (List.length arg_list))
+                        else (false, arg, [arg])) in
+                    let new_args_raw = List.map new_args ~f:(fun (_, _, args) -> args) |> List.concat in
+                    let base = Cps.App (rename fn, rename_multi new_args_raw) in
+                    List.fold new_args ~init:base ~f:(fun acc (is_flat, arg_name, args) ->
+                        if is_flat then (click (); gen_select arg_name (unwrap_vars_exn args) acc)
+                        else acc
+                    )
+                | _ -> Cps.App (rename fn, rename_multi args)
+            )
             | _ -> Cps.App (rename fn, rename_multi args)
         )
-        | _ -> Cps.App (rename fn, rename_multi args)
-    )
-    | Cps.Fix (fundefs, cont) -> (
-        let rdefs = List.fold fundefs ~init:[] ~f:(fun acc (name, args, body) ->
-            if not (Info.used info name) then acc
-            else (match Map.find info.Info.def name with
-                | Some (Info.FlatFun flat_args) ->
-                    let all_args = List.concat (List.map flat_args ~f:(fun (_, _, a) -> a)) in
-                    (name, all_args, go body) :: acc
-                | _ -> (name, args, go body) :: acc
+        | Cps.Fix (fundefs, cont) -> (
+            let rdefs = List.fold fundefs ~init:[] ~f:(fun acc (name, args, body) ->
+                if not (Info.used info name) then acc
+                else (match Map.find info.Info.def name with
+                    | Some (Info.FlatFun flat_args) ->
+                        let all_args = List.concat (List.map flat_args ~f:(fun (_, is_flat, a) ->
+                            if is_flat then click ();
+                            a)) in
+                        (name, all_args, go body) :: acc
+                    | _ -> (name, args, go body) :: acc
+                )
             )
+            in
+            if List.is_empty rdefs then (click (); go cont)
+            else Cps.Fix (List.rev rdefs, go cont)
+        )
+        | Cps.Primop (Cps.Plus, [Cps.Int n; Cps.Int 0], [res], [cont]) -> (click (); new_name res (Cps.Int n); go cont)
+        | Cps.Primop (Cps.Plus, [Cps.Int 0; Cps.Int n], [res], [cont]) -> (click (); new_name res (Cps.Int n); go cont)
+        | Cps.Primop (op, args, res, conts) -> Cps.Primop (op, rename_multi args, res, List.map conts ~f:go)
+        | Cps.Switch (vl, alts) -> Cps.Switch (rename vl, List.map alts ~f:go)
+        | Cps.Select (index, vl, res, cont) -> (match vl with
+            | Cps.Var var -> (
+                match Map.find info.Info.def var with
+                | Some (Info.ArgOnlySelect (fname, _)) -> (match Info.flat_args info fname var with
+                    | Some new_args -> (
+                        click ();
+                        new_name res (Cps.Var (List.nth_exn new_args index));
+                        go cont
+                    )
+                    | None -> Cps.Select (index, rename (Cps.Var var), res, go cont)
+                )
+                | _ -> Cps.Select (index, rename (Cps.Var var), res, go cont)
+                )
+            | _ -> Cps.Select (index, rename vl, res, go cont)
         )
         in
-        if List.is_empty rdefs then go cont
-        else Cps.Fix (List.rev rdefs, go cont)
-    )
-    | Cps.Primop (Cps.Plus, [Cps.Int n; Cps.Int 0], [res], [cont]) -> (new_name res (Cps.Int n); go cont)
-    | Cps.Primop (Cps.Plus, [Cps.Int 0; Cps.Int n], [res], [cont]) -> (new_name res (Cps.Int n); go cont)
-    | Cps.Primop (op, args, res, conts) -> Cps.Primop (op, rename_multi args, res, List.map conts ~f:go)
-    | Cps.Switch (vl, alts) -> Cps.Switch (rename vl, List.map alts ~f:go)
-    | Cps.Select (index, vl, res, cont) -> (match vl with
-        | Cps.Var var -> (
-            match Map.find info.Info.def var with
-            | Some (Info.ArgOnlySelect (fname, _)) -> (match Info.flat_args info fname var with
-                | Some new_args -> (
-                    new_name res (Cps.Var (List.nth_exn new_args index));
-                    go cont
-                )
-                | None -> Cps.Select (index, rename (Cps.Var var), res, go cont)
-            )
-            | _ -> Cps.Select (index, rename (Cps.Var var), res, go cont)
-            )
-        | _ -> Cps.Select (index, rename vl, res, go cont)
-    )
+
+        let clicks = !nclicks in
+        let res = go exp in
+        if !nclicks > clicks then go_repeat res
+        else res
+
     in
-    go exp
+    go_repeat exp
