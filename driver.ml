@@ -50,7 +50,7 @@ let closure_lam = Lam.Fn ("x", Lam.Fn ("y", Lam.App (Lam.Prim Lam.Plus, Lam.Reco
 
 let closure_cps = Conv.to_cps closure_lam id
 
-let closure_cps_closure = Closure.convert closure_cps
+let closure_cps_closure = Closure.convert closure_cps |> Lift.lift
 
 let () = (
     printf !"%{sexp:Lam.lexp}\n" closure_lam;
