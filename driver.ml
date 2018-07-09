@@ -46,10 +46,16 @@ let flatten_not_opt = Conv.to_cps flatten id
 
 let flatten_cps = compile flatten
 
+let closure_lam = Lam.Fn ("x", Lam.Fn ("y", Lam.App (Lam.Prim Lam.Plus, Lam.Record [Lam.Var "x"; Lam.Var "y"])))
+
+let closure_cps = Conv.to_cps closure_lam id
+
+let closure_cps_closure = Closure.convert closure_cps
+
 let () = (
-    printf !"%{sexp:Lam.lexp}\n" flatten;
+    printf !"%{sexp:Lam.lexp}\n" closure_lam;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" flatten_not_opt;
+    printf !"%{sexp:Cps.cexp}\n" closure_cps;
     printf "\n";
-    printf !"%{sexp:Cps.cexp}\n" flatten_cps
+    printf !"%{sexp:Cps.cexp}\n" closure_cps_closure
 )

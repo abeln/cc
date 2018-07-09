@@ -1,12 +1,14 @@
-open Core.Std;;
+open Core.Std
 
 let res_c = ref 0
 let fun_c = ref 0
 let arg_c = ref 0
+let clo_c = ref 0
 
 let res_pre = "res"
 let fun_pre = "fun"
 let arg_pre = "arg"
+let clo_pre = "clo"
 
 let inc cnt pre = fun () ->
     let cnt' = !cnt in
@@ -16,6 +18,7 @@ let inc cnt pre = fun () ->
 let new_res = inc res_c res_pre
 let new_fun = inc fun_c fun_pre
 let new_arg = inc arg_c arg_pre
+let new_clo = inc clo_c clo_pre
 
 let rec gen_args n =
     if n = 0 then [] else new_arg () :: gen_args (n - 1)
